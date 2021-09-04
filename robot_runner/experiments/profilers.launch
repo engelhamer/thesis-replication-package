@@ -1,0 +1,6 @@
+<launch>
+  <include file="$(find turtlebot3_bringup)/launch/turtlebot3_robot.launch"/>
+
+  <node pkg="resource_profiler_service" type="resource_profiler_server.py" name="resource_profiler_server" required="true"/>
+  <node pkg="ina219_profiler_service" type="ina219_profiler_server.py" name="ina219_profiler_server" required="true"/>
+</launch>

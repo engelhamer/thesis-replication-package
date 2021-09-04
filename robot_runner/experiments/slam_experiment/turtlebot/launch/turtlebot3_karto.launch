@@ -1,0 +1,19 @@
+<launch>
+  <!-- Arguments -->
+  <arg name="model" default="$(env TURTLEBOT3_MODEL)" doc="model type [burger, waffle, waffle_pi]"/>
+  <!-- CUSTOM EXPERIMENT ARGS -->
+  <arg name="folder_path"/>
+  <arg name="linear_update"/>
+  <arg name="angular_update"/>
+  <arg name="map_resolution"/>
+
+  <!-- slam_karto -->
+  <node pkg="slam_karto" type="slam_karto" name="slam_karto" output="screen">
+    <!-- EXPERIMENT FACTORS -->
+    <param name="minimum_travel_distance" value="$(arg linear_update)"/>
+    <param name="minimum_travel_heading" value="$(arg angular_update)"/>
+    <param name="resolution" value="$(arg map_resolution)"/>
+
+    <rosparam command="load" file="$(arg folder_path)/config/karto_mapper_params.yaml" />
+  </node>
+</launch>
