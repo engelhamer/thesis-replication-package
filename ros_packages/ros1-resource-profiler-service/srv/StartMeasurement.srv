@@ -1,0 +1,5 @@
+string run
+bool cpu
+bool mem
+---
+bool started
