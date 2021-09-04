@@ -1,0 +1,167 @@
+---
+title: "Memory analysis - Circular arena"
+output: html_notebook
+---
+
+```{r}
+library(tidyverse)
+library(ggpubr)
+library(rstatix)
+library(lmPerm)
+library(e1071)
+library(DescTools)
+
+capitalize <- function(string) {
+  substr(string, 1, 1) <- toupper(substr(string, 1, 1))
+  string
+}
+custom_theme <- theme_bw(base_size = 19) + theme(
+  axis.line = element_line(colour = "black"),
+  panel.border = element_blank(),
+  legend.position = "top",
+  text=element_text(family="serif"),
+)
+```
+
+# Measurements
+Let us first load all measurements obtained from the experiment.
+
+```{r}
+measurements <- read.csv("/home/engel/Documents/experiments/slam_experiment/run_table.csv")
+measurements <- measurements[measurements$arena == 'circular', ]
+measurements$algorithm <- as.factor(measurements$algorithm)
+measurements$map_resolution <- as.factor(measurements$map_resolution)
+measurements$linear_update <- as.factor(measurements$linear_update)
+measurements$angular_update <- as.factor(measurements$angular_update)
+measurements$avg_mem <- measurements$avg_mem / 1048576
+measurements
+```
+
+# Data exploration
+```{r}
+measurements %>%
+  group_by(algorithm, map_resolution, linear_update, angular_update) %>%
+  get_summary_stats(avg_mem, type = "full")
+
+measurements %>%
+  group_by(algorithm) %>%
+  get_summary_stats(avg_mem, type = "full")
+```
+
+```{r}
+hist <- gghistogram(measurements, x = "avg_mem", color = "algorithm", fill = "algorithm", palette='jco') + custom_theme + xlab('Memory utilisation (MB)') + ylab('Count') + labs(color='Algorithm', fill='Algorithm') 
+hist
+ggexport(hist, filename = "mem_circular_histogram.pdf")
+```
+
+```{r}
+bxp <- ggboxplot(measurements, x = "map_resolution", y = "avg_mem", palette = "jco", color="algorithm", facet.by = c("linear_update", "angular_update"), labeller="label_both") + theme_bw(base_size = 19) + theme(legend.position="top", text=element_text(family="serif")) + xlab('Map resolution') + ylab('Memory utilisation (MB)') + labs(color='Algorithm', fill='Algorithm')
+bxp
+ggexport(bxp, filename = "mem_circular_box.pdf")
+```
+# ANOVA
+
+## Assumption checking
+ANOVA has four assumptions, which are checked in this section.
+
+### 1. Independence of samples
+By the design of the experiment, samples are independent (and fully randomised).
+
+### 2. Normality of residuals
+We fit a model based on all four factors (and their interactions) as parameters.
+```{r}
+model  <- lm(avg_mem ~ algorithm*map_resolution*linear_update*angular_update, data = measurements)
+res <- residuals(model)
+```
+
+Get an impression of the distribution of the residuals
+```{r}
+gghistogram(res, fill="lightgrey")
+ggdensity(res, fill="lightgrey")
+
+# Create a QQ plot of residuals
+ggqqplot(res)
+# Compute Shapiro-Wilk test of normality
+shapiro_test(res)
+skewness(res)
+```
+Not normal due to outliers.
+
+### 3. Normality within groups
+```{r}
+shapiro_tests <- measurements %>% group_by(algorithm, map_resolution, linear_update, angular_update)  %>% shapiro_test(avg_mem)
+shapiro_tests[order(shapiro_tests$p),]
+```
+
+28 out of 32 groups have a p-value above 0.05, so for these we cannot reject H0 (the data is normally distributed). Checking the qq plots in addition.
+
+```{r}
+ggqqplot(measurements[measurements$algorithm == 'cartographer', ], "avg_mem", ggtheme = theme_bw()) + facet_grid( linear_update + angular_update ~ map_resolution, labeller = "label_both")
+ggqqplot(measurements[measurements$algorithm == 'gmapping', ], "avg_mem", ggtheme = theme_bw()) + facet_grid(linear_update + angular_update ~ map_resolution, labeller = "label_both")
+ggqqplot(measurements[measurements$algorithm == 'hector', ], "avg_mem", ggtheme = theme_bw()) + facet_grid(linear_update + angular_update ~ map_resolution, labeller = "label_both")
+ggqqplot(measurements[measurements$algorithm == 'karto', ], "avg_mem", ggtheme = theme_bw()) + facet_grid(linear_update + angular_update ~ map_resolution, labeller = "label_both")
+```
+In the plots above, most points are around the normal line. The normality assumption is therefore met. There do appear to be some outliers.
+
+### 4. Homogeneity of variance
+```{r}
+levene_test(avg_mem ~ algorithm*map_resolution*angular_update*linear_update, data = measurements)
+```
+The p-value is higher than 0.05, hence we fail to reject H0. Thus, we can assume homogeneity of variance among all groups.
+
+When plotting the data we observe one group with an extremely high variance.
+
+```{r}
+agg_measurements <- measurements %>% group_by(algorithm, map_resolution, linear_update, angular_update) %>%
+  get_summary_stats(avg_mem, type = "mean_sd")
+ggscatter(agg_measurements, "mean", "sd")
+agg_measurements[order(agg_measurements$sd),]
+```
+
+## Running (PERM)ANOVA
+```{r}
+set.seed(2061)
+aovp.out <- aovp(avg_mem ~ algorithm*map_resolution*linear_update*angular_update, data=measurements, maxIter=100000000, nCycle=1)
+summary(aovp.out)
+```
+
+The results indicate significant main effect of the algorithm and angular update factors.
+
+There is also a significant interaction between the algorithm and map resolution.
+
+### Post hoc tests
+The angular update factor only has 2 treatments (high andl low), thus we do not have to perform any post hoc test for this effect.
+
+#### Algorithm / Map resolution
+To analyse the effect of the algorithm and map resolution interaction, we first assess normality of the groups and compare their variance.
+
+```{r}
+gghistogram(measurements, 'avg_mem', color="algorithm", fill="algorithm") + custom_theme
+
+shapiro_tests <- measurements %>% group_by(algorithm, map_resolution)  %>% shapiro_test(avg_mem)
+shapiro_tests[order(shapiro_tests$p),]
+```
+5 out of 8 are not significant, indicating normality for these groups.
+
+```{r}
+ggqqplot(measurements, "avg_mem", ggtheme = theme_bw()) + facet_grid(map_resolution ~ algorithm, labeller = "label_both")
+```
+Especially for gmapping, the resulting plots seem non-normal.
+
+```{r}
+levene_test(avg_mem ~ algorithm : map_resolution, data = measurements)
+```
+
+```{r}
+agg_measurements <- measurements %>% group_by(algorithm, map_resolution) %>%
+  get_summary_stats(avg_mem, type = "mean_sd")
+ggscatter(agg_measurements, "mean", "sd")
+agg_measurements[order(agg_measurements$sd),]
+```
+One outlier (corresponding to gmapping) is apparent.
+The assumptions for Tukey's HSB test are not met. Hence, we resort to the non-parametric Dunn test.
+
+```{r}
+algorithm_map_resolution_interaction <- interaction(measurements$algorithm, measurements$map_resolution)
+DunnTest(avg_mem ~ algorithm_map_resolution_interaction, measurements, method='BH')
+```

@@ -1,0 +1,265 @@
+---
+title: "ROS message analysis - Circular arena"
+output: html_notebook
+---
+
+```{r}
+library(tidyverse)
+library(ggpubr)
+library(rstatix)
+library(lmPerm)
+library(e1071)
+library(DescTools)
+
+capitalize <- function(string) {
+  substr(string, 1, 1) <- toupper(substr(string, 1, 1))
+  string
+}
+custom_theme <- theme_bw(base_size = 19) + theme(
+  axis.line = element_line(colour = "black"),
+  panel.border = element_blank(),
+  legend.position = "top",
+  text=element_text(family="serif"),
+)
+```
+
+# Measurements
+Let us first load all measurements obtained from the experiment.
+
+```{r}
+measurements <- read.csv("/home/engel/Documents/experiments/slam_experiment/run_table.csv")
+measurements <- measurements[measurements$arena == 'circular', ]
+measurements$algorithm <- as.factor(measurements$algorithm)
+measurements$map_resolution <- as.factor(measurements$map_resolution)
+measurements$linear_update <- as.factor(measurements$linear_update)
+measurements$angular_update <- as.factor(measurements$angular_update)
+measurements$rosbag_msg_size <- measurements$rosbag_msg_size / 1048576
+measurements
+```
+
+# Data exploration - Count
+```{r}
+measurements %>%
+  group_by(algorithm) %>%
+  get_summary_stats(rosbag_msg_count, type = "full")
+```
+
+```{r}
+hist <- gghistogram(measurements, x = "rosbag_msg_count", color = "algorithm", fill = "algorithm", palette='jco') + custom_theme + xlab('ROS message count') + ylab('Count') + labs(color='Algorithm', fill='Algorithm') 
+hist
+ggexport(hist, filename = "ros_message_count_circular_histogram.pdf")
+```
+
+
+```{r}
+bxp <- ggboxplot(measurements, x = "map_resolution", y = "rosbag_msg_count", palette = "jco", color="algorithm", facet.by = c("linear_update", "angular_update"), labeller="label_both") + theme_bw(base_size = 19) + theme(legend.position="top", text=element_text(family="serif")) + xlab('Map resolution') + ylab('ROS message count') + labs(color='Algorithm', fill='Algorithm')
+bxp
+ggexport(bxp, filename = "ros_message_count_circular_box.pdf")
+```
+# ANOVA - Count
+
+## Assumption checking
+ANOVA has four assumptions, which are checked in this section.
+
+### 1. Independence of samples
+By the design of the experiment, samples are independent (and fully randomised).
+
+### 2. Normality of residuals
+We fit a model based on all four factors (and their interactions) as parameters.
+```{r}
+model  <- lm(rosbag_msg_count ~ algorithm*map_resolution*linear_update*angular_update, data = measurements)
+res <- residuals(model)
+```
+
+Get an impression of the distribution of the residuals
+```{r}
+gghistogram(res, fill="lightgrey")
+ggdensity(res, fill="lightgrey")
+
+# Create a QQ plot of residuals
+ggqqplot(res)
+# Compute Shapiro-Wilk test of normality
+shapiro_test(res)
+skewness(res)
+```
+Not normal due to outliers. Trying some transformations found that reciprocal transform gives no normal result either.
+
+### 3. Normality within groups
+```{r}
+shapiro_tests <- measurements %>% group_by(algorithm, map_resolution, linear_update, angular_update)  %>% shapiro_test(rosbag_msg_count)
+shapiro_tests[order(shapiro_tests$p),]
+```
+
+25 out of 32 groups have a p-value above 0.05, so for these we cannot reject H0 (the data is normally distributed). Checking the qq plots in addition.
+
+```{r}
+ggqqplot(measurements[measurements$algorithm == 'cartographer', ], "rosbag_msg_count", ggtheme = theme_bw()) + facet_grid( linear_update + angular_update ~ map_resolution, labeller = "label_both")
+ggqqplot(measurements[measurements$algorithm == 'gmapping', ], "rosbag_msg_count", ggtheme = theme_bw()) + facet_grid(linear_update + angular_update ~ map_resolution, labeller = "label_both")
+ggqqplot(measurements[measurements$algorithm == 'hector', ], "rosbag_msg_count", ggtheme = theme_bw()) + facet_grid(linear_update + angular_update ~ map_resolution, labeller = "label_both")
+ggqqplot(measurements[measurements$algorithm == 'karto', ], "rosbag_msg_count", ggtheme = theme_bw()) + facet_grid(linear_update + angular_update ~ map_resolution, labeller = "label_both")
+```
+In the plots above, most points are around the normal line.  The normality assumption is therefore met.
+
+### 4. Homogeneity of variance
+#### Transformed data
+```{r}
+levene_test(rosbag_msg_count ~ algorithm*map_resolution*angular_update*linear_update, data = measurements)
+```
+The p-value is lower than 0.05, hence we reject H0. Thus, we cannot assume homogeneity of variance among all groups.
+
+```{r}
+agg_measurements <- measurements %>% group_by(algorithm, map_resolution, linear_update, angular_update) %>%
+  get_summary_stats(rosbag_msg_count, type = "mean_sd")
+ggscatter(agg_measurements, "mean", "sd")
+agg_measurements[order(agg_measurements$sd),]
+```
+
+## Running (PERM)ANOVA
+
+```{r}
+set.seed(2091)
+aovp.out <- aovp(rosbag_msg_count ~ algorithm*map_resolution*linear_update*angular_update, data=measurements, maxIter=100000000, nCycle=1)
+summary(aovp.out)
+```
+
+### Post hoc tests
+To analyse the difference between algorithms, we first assess normality of the groups and compare their variance.
+
+```{r}
+gghistogram(measurements, 'rosbag_msg_count', color="algorithm", fill="algorithm") + custom_theme
+
+shapiro_tests <- measurements %>% group_by(algorithm)  %>% shapiro_test(rosbag_msg_count)
+shapiro_tests[order(shapiro_tests$p),]
+```
+
+```{r}
+measurements %>% ggqqplot("rosbag_msg_count", ggtheme = theme_bw(), fill="algorithm", color="algorithm")
+```
+
+```{r}
+levene_test(rosbag_msg_count ~ algorithm, data = measurements)
+```
+The assumptions for Tukey's HSB test are not met. Hence, we resort to the non-parametric Dunn test.
+
+```{r}
+DunnTest(rosbag_msg_count ~ algorithm, measurements, method='BH')
+```
+
+#############################################################################
+#############################################################################
+#############################################################################
+#############################################################################
+#############################################################################
+#############################################################################
+#############################################################################
+#############################################################################
+
+
+# Data exploration - Size
+
+```{r}
+measurements %>%
+  group_by(algorithm) %>%
+  get_summary_stats(rosbag_msg_size, type = "full")
+```
+
+```{r}
+hist <- gghistogram(measurements, x = "rosbag_msg_size", color = "algorithm", fill = "algorithm", palette='jco') + custom_theme + xlab('ROS message size (MB)') + ylab('Count') + labs(color='Algorithm', fill='Algorithm') 
+hist
+ggexport(hist, filename = "ros_message_size_circular_histogram.pdf")
+```
+
+To get an impression of the distribution of the distribution of average cpu utilisation per group, we plot the data in boxplots.
+
+```{r}
+bxp <- ggboxplot(measurements, x = "map_resolution", y = "rosbag_msg_size", palette = "jco", color="algorithm", facet.by = c("linear_update", "angular_update"), labeller="label_both") + theme_bw(base_size = 19) + theme(legend.position="top", text=element_text(family="serif")) + xlab('Map resolution') + ylab('ROS message size (MB)') + labs(color='Algorithm', fill='Algorithm')
+bxp
+ggexport(bxp, filename = "ros_message_size_circular_box.pdf")
+```
+# ANOVA - Size
+
+## Assumption checking
+ANOVA has four assumptions, which are checked in this section.
+
+### 1. Independence of samples
+By the design of the experiment, samples are independent (and fully randomised).
+
+### 2. Normality of residuals
+We fit a model based on all four factors (and their interactions) as parameters.
+```{r}
+model  <- lm(rosbag_msg_size ~ algorithm*map_resolution*linear_update*angular_update, data = measurements)
+res <- residuals(model)
+```
+
+Get an impression of the distribution of the residuals
+```{r}
+gghistogram(res, fill="lightgrey")
+ggdensity(res, fill="lightgrey")
+
+# Create a QQ plot of residuals
+ggqqplot(res)
+# Compute Shapiro-Wilk test of normality
+shapiro_test(res)
+skewness(res)
+```
+
+### 3. Normality within groups
+```{r}
+shapiro_tests <- measurements %>% group_by(algorithm, map_resolution, linear_update, angular_update)  %>% shapiro_test(rosbag_msg_size)
+shapiro_tests[order(shapiro_tests$p),]
+```
+
+25 out of 32 groups have a p-value above 0.05, so for these we cannot reject H0 (the data is normally distributed). Checking the qq plots in addition.
+
+```{r}
+ggqqplot(measurements[measurements$algorithm == 'cartographer', ], "rosbag_msg_size", ggtheme = theme_bw()) + facet_grid( linear_update + angular_update ~ map_resolution, labeller = "label_both")
+ggqqplot(measurements[measurements$algorithm == 'gmapping', ], "rosbag_msg_size", ggtheme = theme_bw()) + facet_grid(linear_update + angular_update ~ map_resolution, labeller = "label_both")
+ggqqplot(measurements[measurements$algorithm == 'hector', ], "rosbag_msg_size", ggtheme = theme_bw()) + facet_grid(linear_update + angular_update ~ map_resolution, labeller = "label_both")
+ggqqplot(measurements[measurements$algorithm == 'karto', ], "rosbag_msg_size", ggtheme = theme_bw()) + facet_grid(linear_update + angular_update ~ map_resolution, labeller = "label_both")
+```
+In the plots above, most points are around the normal line.  The normality assumption is therefore met.
+
+### 4. Homogeneity of variance
+#### Transformed data
+```{r}
+levene_test(rosbag_msg_size ~ algorithm*map_resolution*angular_update*linear_update, data = measurements)
+```
+The p-value is lower than 0.05, hence we reject H0. Thus, we cannot assume homogeneity of variance among all groups.
+
+```{r}
+agg_measurements <- measurements %>% group_by(algorithm, map_resolution, linear_update, angular_update) %>%
+  get_summary_stats(rosbag_msg_size, type = "mean_sd")
+ggscatter(agg_measurements, "mean", "sd")
+agg_measurements[order(agg_measurements$sd),]
+```
+
+## Running (PERM)ANOVA
+
+```{r}
+set.seed(2101)
+aovp.out <- aovp(rosbag_msg_size ~ algorithm*map_resolution*linear_update*angular_update, data=measurements, maxIter=100000000, nCycle=1)
+summary(aovp.out)
+```
+
+### Post hoc test
+To analyse the difference between algorithms, we first assess normality of the groups and compare their variance.
+
+```{r}
+gghistogram(measurements, 'rosbag_msg_size', color="algorithm", fill="algorithm") + custom_theme
+
+shapiro_tests <- measurements %>% group_by(algorithm)  %>% shapiro_test(rosbag_msg_size)
+shapiro_tests[order(shapiro_tests$p),]
+```
+
+```{r}
+measurements %>% ggqqplot("rosbag_msg_size", ggtheme = theme_bw(), fill="algorithm", color="algorithm")
+```
+
+```{r}
+levene_test(rosbag_msg_size ~ algorithm, data = measurements)
+```
+The assumptions for Tukey's HSB test are not met. Hence, we resort to the non-parametric Dunn test.
+
+```{r}
+DunnTest(rosbag_msg_size ~ algorithm, measurements, method='BH')
+```

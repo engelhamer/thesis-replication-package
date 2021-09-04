@@ -1,0 +1,66 @@
+---
+title: "ROS traffic analysis - Point to point arena"
+output: html_notebook
+---
+
+```{r}
+library(tidyverse)
+library(ggpubr)
+library(rstatix)
+library(lmPerm)
+library(e1071)
+library(DescTools)
+
+custom_theme <- theme_bw() + theme(
+  axis.line = element_line(colour = "black"),
+  panel.border = element_blank(),
+  legend.position = "top"
+)
+```
+
+# Run table
+Let us first load the run table from the experiment.
+
+```{r}
+run_table <- read.csv("/home/engel/Documents/experiments/slam_experiment/run_table_trimmed.csv")
+# run_table <- measurements[measurements$arena == 'point_to_point', ]
+run_table
+```
+
+```{r}
+message_counts <- data.frame(
+  algorithm=c('cartographer', 'gmapping', 'hector', 'karto'),
+  stringsAsFactors=FALSE
+)
+rownames(message_counts) <- message_counts$algorithm
+
+for(i in 1:nrow(run_table)) {
+    run <- run_table[i,]
+    rosbag <- read.csv(paste("/home/engel/Documents/experiments/slam_experiment/", run['X__run_id'], '/rosbag_measurements.csv', sep=''), header=FALSE, sep=",", col.names=c('timestamp', 'topic', 'size'))
+    rosbag_message_counts <- as.data.frame(table(topic=rosbag[['topic']]))
+    
+    for(j in 1:nrow(rosbag_message_counts)) {
+    # for(j in 1:2) {
+        topic_row <- rosbag_message_counts[j,]
+        if(! topic_row[['topic']] %in% colnames(message_counts)) {
+            message_counts[toString(topic_row[['topic']])] <- c(0, 0, 0, 0)
+        }
+        
+        message_counts[toString(run[['algorithm']]), toString(topic_row[['topic']])] <- message_counts[toString(run[['algorithm']]), toString(topic_row[['topic']])] + topic_row['Freq']
+    }
+}
+
+message_counts$algorithm <- NULL
+message_counts
+```
+
+```{r, fig.width=10, fig.height=4}
+ggballoonplot(message_counts[,1:27], xlab ="", ylab ="Algorithm") + theme(legend.position="top") + custom_theme + scale_x_discrete(labels = function(x) str_wrap(x, width = 30)) + theme(axis.text.x = element_text(angle = 90, vjust = 0.5, size = 10, family = "mono", ), axis.title.x=element_blank())
+```
+
+
+```{r, fig.width=8, fig.height=18}
+ggballoonplot(t(message_counts), xlab="") + theme(legend.position="top") + custom_theme + scale_y_discrete(labels = function(y) str_wrap(y, width = 40)) + theme(axis.text.y = element_text(vjust = 0.5, size = 8, family = "mono"), axis.title.y=element_blank()) + rotate_x_text(45)
+```
+
+

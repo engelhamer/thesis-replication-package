@@ -1,0 +1,102 @@
+---
+title: "Map quality analysis - Point to point arena"
+output: html_notebook
+---
+
+```{r}
+library(tidyverse)
+library(ggpubr)
+library(rstatix)
+library(lmPerm)
+library(e1071)
+library(DescTools)
+
+capitalize <- function(string) {
+  substr(string, 1, 1) <- toupper(substr(string, 1, 1))
+  string
+}
+custom_theme <- theme_bw(base_size = 19) + theme(
+  axis.line = element_line(colour = "black"),
+  panel.border = element_blank(),
+  legend.position = "top",
+  text=element_text(family="serif"),
+)
+```
+
+# Measurements
+
+```{r}
+measurements <- read.csv("/home/engel/Documents/experiments/slam_experiment/run_table_map_data.csv")
+measurements <- measurements[measurements$arena == 'point_to_point', ]
+measurements$algorithm <- as.factor(measurements$algorithm)
+measurements$map_resolution <- as.factor(measurements$map_resolution)
+measurements$linear_update <- as.factor(measurements$linear_update)
+measurements$angular_update <- as.factor(measurements$angular_update)
+measurements
+```
+
+# Data exploration
+```{r}
+measurements %>%
+  group_by(algorithm, map_resolution, linear_update, angular_update) %>%
+  get_summary_stats(proportion_occupied, type = "full")
+
+measurements %>%
+  group_by(algorithm, map_resolution, linear_update, angular_update) %>%
+  get_summary_stats(corner_count, type = "full")
+
+measurements %>%
+  group_by(algorithm, map_resolution, linear_update, angular_update) %>%
+  get_summary_stats(enclosed_area_count, type = "full")
+
+measurements %>%
+  group_by(algorithm) %>%
+  get_summary_stats(proportion_occupied, type = "full")
+
+measurements %>%
+  group_by(algorithm) %>%
+  get_summary_stats(corner_count, type = "full")
+
+measurements %>%
+  group_by(algorithm) %>%
+  get_summary_stats(enclosed_area_count, type = "full")
+```
+
+## Map occupancy
+```{r}
+hist <- gghistogram(measurements, x = "proportion_occupied", color = "algorithm", fill = "algorithm", palette='jco') + custom_theme + xlab('Map occupancy (%)') + ylab('Count') + labs(color='Algorithm', fill='Algorithm') 
+hist
+ggexport(hist, filename = "map_occupancy_point_to_point_histogram.pdf")
+```
+
+```{r}
+bxp <- ggboxplot(measurements, x = "map_resolution", y = "proportion_occupied", palette = "jco", color="algorithm", facet.by = c("linear_update", "angular_update"), labeller="label_both") + theme_bw(base_size = 19) + theme(legend.position="top", text=element_text(family="serif")) + xlab('Map resolution') + ylab('Map occupancy (%)') + labs(color='Algorithm', fill='Algorithm')
+bxp
+ggexport(bxp, filename = "map_occupancy_point_to_point_box.pdf")
+```
+
+## Corner count
+```{r}
+hist <- gghistogram(measurements, x = "corner_count", color = "algorithm", fill = "algorithm", palette='jco') + custom_theme + xlab('Map corner count') + ylab('Count') + labs(color='Algorithm', fill='Algorithm') 
+hist
+ggexport(hist, filename = "map_corner_count_point_to_point_histogram.pdf")
+```
+
+```{r}
+bxp <- ggboxplot(measurements, x = "map_resolution", y = "corner_count", palette = "jco", color="algorithm", facet.by = c("linear_update", "angular_update"), labeller="label_both") + theme_bw(base_size = 19) + theme(legend.position="top", text=element_text(family="serif")) + xlab('Map resolution') + ylab('Map corner count') + labs(color='Algorithm', fill='Algorithm')
+bxp
+ggexport(bxp, filename = "map_corner_count_point_to_point_box.pdf")
+```
+
+## Enclosed area count
+```{r}
+hist <- gghistogram(measurements, x = "enclosed_area_count", color = "algorithm", fill = "algorithm", palette='jco') + custom_theme + xlab('Map enclosed area count') + ylab('Count') + labs(color='Algorithm', fill='Algorithm') 
+hist
+ggexport(hist, filename = "map_enclosed_area_count_point_to_point_histogram.pdf")
+```
+
+```{r}
+bxp <- ggboxplot(measurements, x = "map_resolution", y = "enclosed_area_count", palette = "jco", color="algorithm", facet.by = c("linear_update", "angular_update"), labeller="label_both") + theme_bw(base_size = 19) + theme(legend.position="top", text=element_text(family="serif")) + xlab('Map resolution') + ylab('Map enclosed area count') + labs(color='Algorithm', fill='Algorithm')
+bxp
+ggexport(bxp, filename = "map_enclosed_area_count_point_to_point_box.pdf")
+```

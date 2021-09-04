@@ -1,0 +1,28 @@
+---
+title: "Correlation analysis"
+output: html_notebook
+---
+
+```{r}
+measurements <- read.csv("/home/engel/Documents/experiments/slam_experiment/run_table.csv")
+measurements$algorithm <- as.factor(measurements$algorithm)
+measurements$map_resolution <- as.factor(measurements$map_resolution)
+measurements$linear_update <- as.factor(measurements$linear_update)
+measurements$angular_update <- as.factor(measurements$angular_update)
+measurements$rosbag_msg_size <- measurements$rosbag_msg_size / 1048576
+measurements$energy <- measurements$energy / 1000
+measurements
+```
+
+```{r}
+cor(measurements$rosbag_msg_count, measurements$rosbag_msg_size, method = "spearman")
+```
+
+```{r}
+arena_measurements <- measurements[measurements$arena == 'circular',]
+cor(arena_measurements$energy, arena_measurements$avg_cpu, method = "spearman")
+```
+```{r}
+arena_measurements <- measurements[measurements$arena == 'point_to_point',]
+cor(arena_measurements$energy, arena_measurements$avg_cpu, method = "spearman")
+```

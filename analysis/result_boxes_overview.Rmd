@@ -1,0 +1,284 @@
+---
+title: "Result box computations"
+output: html_notebook
+---
+
+```{r}
+library(tidyverse)
+library(ggpubr)
+library(rstatix)
+library(lmPerm)
+library(e1071)
+library(DescTools)
+
+capitalize <- function(string) {
+  substr(string, 1, 1) <- toupper(substr(string, 1, 1))
+  string
+}
+custom_theme <- theme_bw(base_size = 19) + theme(
+  axis.line = element_line(colour = "black"),
+  panel.border = element_blank(),
+  legend.position = "top",
+  text=element_text(family="serif"),
+)
+```
+
+# Measurements
+Let us first load all measurements obtained from the experiment.
+
+```{r}
+measurements <- read.csv("/home/engel/Documents/experiments/slam_experiment/run_table.csv")
+measurements$avg_mem <- measurements$avg_mem / 1048576
+measurements$energy <- measurements$energy / 1000
+
+measurements
+```
+
+# Energy consumption
+## Point to point arena
+```{r}
+arena_measurements <- measurements[(measurements$arena == 'point_to_point'),]
+```
+
+### Simple main effect: linear update
+```{r}
+arena_measurements %>% group_by(linear_update) %>% get_summary_stats(energy, type = "mean_sd")
+```
+
+### Two-way interaction: algorithm and angular update
+```{r}
+arena_measurements %>% group_by(algorithm, angular_update) %>% get_summary_stats(energy, type = "mean_sd")
+```
+
+```{r}
+group_1_mean <- mean(c(822.696, 826.567, 837.811))
+group_2_mean <- mean(c(810.523, 807.320, 807.517, 809.296, 805.392))
+group_1_mean
+group_2_mean
+group_1_mean / group_2_mean
+```
+
+## Circular arena
+```{r}
+arena_measurements <- measurements[(measurements$arena == 'circular'),]
+```
+
+### Low linear update
+```{r}
+arena_measurements_low_linear <- measurements[(measurements$arena == 'circular') & (measurements$linear_update == 0.2), ]
+```
+
+```{r}
+arena_measurements_low_linear %>% group_by(angular_update) %>% get_summary_stats(energy, type = "mean_sd")
+```
+```{r}
+947.202 / 940.761
+```
+
+
+#### Algorithm groups
+```{r}
+arena_measurements_low_linear %>% group_by(algorithm) %>% get_summary_stats(energy, type = "mean_sd")
+```
+
+```{r}
+group_1_mean <- mean(c(955.888, 951.649))
+group_2_mean <- mean(c(934.840, 933.550))
+group_1_mean
+group_2_mean
+group_1_mean / group_2_mean
+```
+
+### High linear update
+```{r}
+arena_measurements_high_linear <- measurements[(measurements$arena == 'circular') & (measurements$linear_update == 1.0), ]
+```
+
+```{r}
+arena_measurements_high_linear %>% group_by(algorithm, angular_update) %>% get_summary_stats(energy, type = "mean_sd")
+```
+```{r}
+973.357 / 936.823
+```
+
+
+#### Algorithm groups
+```{r}
+arena_measurements_high_linear %>% group_by(algorithm, angular_update) %>% get_summary_stats(energy, type = "mean_sd")
+```
+
+```{r}
+group_1_mean <- mean(c(956.212, 953.481, 973.357))
+group_2_mean <- mean(c(936.823, 933.671, 933.997, 933.624, 930.640))
+group_1_mean
+group_2_mean
+group_1_mean / group_2_mean
+```
+
+# CPU utilisation
+## Point to point arena
+```{r}
+arena_measurements <- measurements[(measurements$arena == 'point_to_point'),]
+```
+
+### Simple main effect: map resolution
+```{r}
+arena_measurements %>% group_by(map_resolution) %>% get_summary_stats(avg_cpu, type = "mean_sd")
+```
+
+### Two-way interaction: algorithm and angular update
+```{r}
+arena_measurements %>% group_by(algorithm, angular_update) %>% get_summary_stats(avg_cpu, type = "mean_sd")
+```
+
+```{r}
+41.982 / 31.651
+group_1_mean <- mean(c(43.830, 42.373, 41.982))
+group_2_mean <- mean(c(31.651, 28.657, 29.101, 29.454, 28.836))
+group_1_mean
+group_2_mean
+group_1_mean - group_2_mean
+group_1_mean / group_2_mean
+```
+
+## Circular arena
+```{r}
+arena_measurements <- measurements[(measurements$arena == 'circular'),]
+```
+
+```{r}
+arena_measurements %>% group_by(map_resolution) %>% get_summary_stats(avg_cpu, type = "mean_sd")
+```
+
+```{r}
+35.173 - 34.316
+35.173 / 34.316
+```
+
+### Algorithm groups
+```{r}
+arena_measurements %>% group_by(algorithm, angular_update) %>% get_summary_stats(avg_cpu, type = "mean_sd")
+```
+
+```{r}
+44.511 - 31.636
+44.511 / 31.636
+group_1_mean <- mean(c(43.323, 42.593, 44.511))
+group_2_mean <- mean(c(31.636, 28.585, 28.624, 29.866, 28.819))
+group_1_mean
+group_2_mean
+group_1_mean - group_2_mean
+group_1_mean / group_2_mean
+```
+
+
+# Memory utilisation
+## Point to point arena
+```{r}
+arena_measurements <- measurements[(measurements$arena == 'point_to_point'),]
+```
+
+### Two-way interaction: algorithm and map resolution
+```{r}
+arena_measurements %>% group_by(algorithm, map_resolution) %>% get_summary_stats(avg_mem, type = "mean_sd")
+arena_measurements %>% group_by(algorithm) %>% get_summary_stats(avg_mem, type = "mean_sd")
+```
+
+```{r}
+group_1_mean <- mean(c(624.663, 622.311, 623.170))
+group_2_mean <- mean(c(636.445, 624.663))
+group_3_mean <- mean(c(657.713, 657.653))
+group_4_mean <- mean(c(744.417, 745.624))
+
+group_1_mean
+group_2_mean
+group_3_mean
+group_4_mean
+
+group_2_mean / group_1_mean
+group_3_mean / group_1_mean
+group_4_mean / group_1_mean
+```
+
+## Circular arena
+```{r}
+arena_measurements <- measurements[(measurements$arena == 'circular'),]
+```
+
+```{r}
+arena_measurements %>% group_by(angular_update) %>% get_summary_stats(avg_mem, type = "mean_sd")
+```
+
+```{r}
+666.025 - 663.909
+666.025 / 663.909
+```
+
+### Algorithm groups
+```{r}
+arena_measurements %>% group_by(algorithm, map_resolution) %>% get_summary_stats(avg_mem, type = "mean_sd")
+arena_measurements %>% group_by(algorithm) %>% get_summary_stats(avg_mem, type = "mean_sd")
+```
+
+```{r}
+group_1_mean <- mean(c(622.463, 623.683, 626.667))
+group_2_mean <- mean(c(631.628, 626.667))
+group_3_mean <- mean(c(659.519, 658.776))
+group_4_mean <- mean(c(746.627, 750.371))
+
+group_1_mean
+group_2_mean
+group_3_mean
+group_4_mean
+
+group_2_mean / group_1_mean
+group_3_mean / group_1_mean
+group_4_mean / group_1_mean
+```
+
+# ROS mmessage count
+## Point to point arena
+```{r}
+arena_measurements <- measurements[(measurements$arena == 'point_to_point'),]
+```
+
+### Per algorithm
+```{r}
+arena_measurements %>% group_by(algorithm) %>% get_summary_stats(rosbag_msg_count, type = "mean_sd")
+```
+
+```{r}
+group_1_mean <- mean(c(40155.97, 40579.65))
+group_2_mean <- mean(c(41198.32))
+group_3_mean <- mean(c(68170.48))
+
+group_1_mean
+group_2_mean
+group_3_mean
+
+group_2_mean / group_1_mean
+group_3_mean / group_1_mean
+```
+
+## Circular arena
+```{r}
+arena_measurements <- measurements[(measurements$arena == 'circular'),]
+```
+
+### Per algorithm
+```{r}
+arena_measurements %>% group_by(algorithm) %>% get_summary_stats(rosbag_msg_count, type = "mean_sd")
+```
+
+```{r}
+group_1_mean <- mean(c(46746.65, 46359.22))
+group_2_mean <- mean(c(47430.38))
+group_3_mean <- mean(c(79666.23))
+
+group_1_mean
+group_2_mean
+group_3_mean
+
+group_2_mean / group_1_mean
+group_3_mean / group_1_mean
+```
