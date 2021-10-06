@@ -101,7 +101,7 @@ class RobotRunnerConfig:
         host = 'ubuntu@192.168.1.222'
         cmd = ' '.join([
             'python3',
-            'robot-runner-private/experiments/slam_experiment/turtlebot',
+            'thesis-replication-package/robot_runner/experiments/slam_experiment/turtlebot',
             self.name,
             str(context.run_nr),
             context.run_variation['algorithm'],
